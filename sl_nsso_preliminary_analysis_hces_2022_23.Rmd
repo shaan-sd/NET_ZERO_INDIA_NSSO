@@ -1,0 +1,890 @@
+---
+title: "Analysis of household consumption expenditure: NSSO Consumer Expenditure Survey 2022-23"
+output: beamer_presentation
+header-includes:
+   - \setbeamertemplate{footline}[frame number]
+   - \usepackage{graphicx}
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+options(tinytex.verbose = TRUE)
+```
+
+## Residential energy demand forecast
+
+-   To create policy pathways towards net-zero emissions future in India, it is imperative to understand the residential energy demand and expenditure patterns of households.
+
+-   It will help us in satisfying future energy demand and address affordability concerns as well.
+
+-   However, direct measurement of household energy demand and income/expenditure levels is a tough task due to absence of credible source of unit-level database.
+
+-   Household Consumption Expenditure Survey (2022-23) dataset published by Ministry of Statistics and Programme Implementation (MoPSI) provides us an alternative way of measuring household energy demand
+
+## Household Consumption Expenditure Survey (2022-23)
+
+-   The Household Consumption Expenditure Survey (HCES) is designed to collect information on consumption of goods and services by the households.
+
+-   The survey also collects some auxiliary information on household characteristics and demographic particulars of the households.
+
+-   Information collected in HCES is useful for understanding the consumption and expenditure pattern, standard of living and well-being of the households.
+
+## Methodology
+
+-   We pre-process and clean the dataset as per the methodology prescribed in \footnotesize https://github.com/s7u512/NSSO_HCES_2022-23/tree/main \normalsize
+
+-  Afterwards we compute the monthly per capital expenditure (MPCE) values of households in both urban and rural areas for a particular state.
+
+- Based on their expenditure (MPCE) quintiles\footnote{Households were divided into quintiles based on their Monthly Per Capita Expenditure (MPCE), ensuring each quintile contains an equal proportion of the weighted population. This approach accounts for varying household sizes and weights, leading to different numbers of unweighted households and populations across quintiles.}, we analyse various consumption patterns of urban/rural households for each quintile in a state.
+
+
+## Variables of Interest
+
+The variables of interest have been categorised into 3 major blocks
+
+-   Characterstics of the dwelling unit of households (building materials used, source of energy for cooking and lighting, source of drinking water)
+
+-   Consumer goods ownership - Whether households possesed TV, mobiles, PC, Laptop, bikes, cars, trucks, washing machine, AC, cooler, etc.
+
+-   Appliances and transport equipment purchases - Number of first hand and second hand purchases, cost of purchases, cost of repair and maintenance, etc for goods identified above.
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+library(tidyverse)
+
+setwd("C:/Users/dassu/Shaan/NET_ZERO_INDIA")
+
+# Load the necessary data
+load("./DATA/MPCE.RData")
+load("./DATA/Household.RData")
+load("./DATA/Consumable_ownership.RData")
+
+
+
+# Generic function
+generate_plots <- function(state_name = NULL) {
+  
+  # Process MPCE Data
+  # Generate Rural and Urban MPCE Data
+  MPCE <- MPCE %>%
+    mutate(Sector = if_else(Sector == 2, "Urban", "Rural"))
+  
+  # filter for Karnataka
+  MPCE_Karnataka <- MPCE %>%
+    filter(if (!is.null(state_name)) StateName == state_name else TRUE)
+  
+  # filter for rural
+  MPCE_Karnataka_Rural <- MPCE_Karnataka %>% filter(Sector == "Rural")
+  
+  # ordering by mpce
+  MPCE_Karnataka_Rural <- MPCE_Karnataka_Rural[order(MPCE_Karnataka_Rural$MPCE), ]
+  
+  
+  # Step 1: Ensure the data is sorted by MPCE
+  MPCE_Karnataka_Rural1 <- MPCE_Karnataka_Rural %>%
+    arrange(MPCE)
+  
+  # Step 2: Calculate cumulative estimated population
+  MPCE_Karnataka_Rural1 <- MPCE_Karnataka_Rural1 %>%
+    mutate(cumulative_population = cumsum(Household.size.F * Weights))
+  
+  
+  # Step 3: Determine total population and quintile breakpoints
+  total_population_rural <- sum(MPCE_Karnataka_Rural1$Household.size.F * MPCE_Karnataka_Rural1$Weights)
+  quintile_breaks_rural <- seq(0, total_population_rural, length.out = 6)  # 5 quintiles = 6 breakpoints
+  
+  # Step 4: Assign quintiles based on cumulative population
+  MPCE_Karnataka_Rural1 <- MPCE_Karnataka_Rural1 %>%
+    mutate(quintile = cut(cumulative_population, breaks = quintile_breaks_rural, labels = 1:5, include.lowest = TRUE))
+  
+  # summary stats by quintile
+  mpce_by_quintile_rural <- MPCE_Karnataka_Rural1 %>%
+    group_by(quintile) %>%
+    summarise(
+      min_MPCE = quantile(MPCE, probs = 0, weights = Weights),  # Minimum MPCE using weighted quantile
+      avg_MPCE = sum(MPCE * Weights * Household.size.F)/sum(Weights * Household.size.F),
+      max_MPCE = quantile(MPCE, probs = 1, weights = Weights),    # Maximum MPCE using weighted quantile
+      avg_HH_size = sum(Household.size.F * Weights) / sum(Weights),  # Calculate average household size in each percentile
+      total_population = sum(Household.size.F * Weights),  # Total population in each percentile
+      weighted_num_households = sum(Weights)
+    )
+  
+  # Print the results
+  mpce_by_quintile_rural1 <- mpce_by_quintile_rural[, 1:4]
+  mpce_by_quintile_rural_pop <- mpce_by_quintile_rural[, c(1, 5:7)]
+  
+  colnames(mpce_by_quintile_rural_pop)[colnames(mpce_by_quintile_rural_pop) == "weighted_num_households"] <- "weighted_households"
+  
+  
+  # URBAN
+  # filter for urban
+  MPCE_Karnataka_Urban <- MPCE_Karnataka %>% filter(Sector == "Urban")
+  
+  #ordering by mpce
+  MPCE_Karnataka_Urban <- MPCE_Karnataka_Urban[order(MPCE_Karnataka_Urban$MPCE), ]
+  
+  
+  # Step 1: Ensure the data is sorted by MPCE
+  MPCE_Karnataka_Urban1 <- MPCE_Karnataka_Urban %>%
+    arrange(MPCE)
+  
+  # Step 2: Calculate cumulative estimated population
+  MPCE_Karnataka_Urban1 <- MPCE_Karnataka_Urban1 %>%
+    mutate(cumulative_population = cumsum(Household.size.F * Weights))
+  
+  # Step 3: Determine total population and quintile breakpoints
+  total_population_urban <- sum(MPCE_Karnataka_Urban1$Household.size.F * MPCE_Karnataka_Urban1$Weights)
+  quintile_breaks_urban <- seq(0, total_population_urban, length.out = 6)  # 5 quintiles = 6 breakpoints
+  
+  # Step 4: Assign quintiles based on cumulative population
+  MPCE_Karnataka_Urban1 <- MPCE_Karnataka_Urban1 %>%
+    mutate(quintile = cut(cumulative_population, breaks = quintile_breaks_urban, labels = 1:5, include.lowest = TRUE))
+  
+  # summary stats by quintile
+  mpce_by_quintile_urban <- MPCE_Karnataka_Urban1 %>%
+    group_by(quintile) %>%
+    summarise(
+      min_MPCE = quantile(MPCE, probs = 0, weights = Weights),  # Minimum MPCE using weighted quantile
+      avg_MPCE = sum(MPCE * Weights * Household.size.F)/sum(Weights * Household.size.F),
+      max_MPCE = quantile(MPCE, probs = 1, weights = Weights),    # Maximum MPCE using weighted quantile
+      avg_HH_size = sum(Household.size.F * Weights) / sum(Weights),  # Calculate average household size in each percentile
+      total_population = sum(Household.size.F * Weights),  # Total population in each percentile
+      weighted_num_households = sum(Weights)
+    )
+  
+  # Print the results
+  mpce_by_quintile_urban1 <- mpce_by_quintile_urban[, 1:4]
+  
+  mpce_by_quintile_urban_pop <- mpce_by_quintile_urban[, c(1, 5:7)]
+  
+  colnames(mpce_by_quintile_urban_pop)[colnames(mpce_by_quintile_urban_pop) == "weighted_num_households"] <- "weighted_households"
+  
+  # Calculate the average MPCE for Urban and Rural sectors
+  Urban_avg_MPCE <- MPCE_Karnataka_Urban %>%
+    summarise(avg_MPCE = sum(MPCE * Weights * Household.size.F) / sum(Weights * Household.size.F)) %>%
+    pull(avg_MPCE)
+  
+  Rural_avg_MPCE <- MPCE_Karnataka_Rural %>%
+    summarise(avg_MPCE = sum(MPCE * Weights * Household.size.F) / sum(Weights * Household.size.F)) %>%
+    pull(avg_MPCE)
+  
+  # Combine the data
+  mpce_by_quintile_urban2 <- mpce_by_quintile_urban1 %>%
+    mutate(Sector = "Urban")
+  
+  mpce_by_quintile_rural2 <- mpce_by_quintile_rural1 %>%
+    mutate(Sector = "Rural")
+  
+  Final_MPCE1 <- rbind(mpce_by_quintile_rural2, mpce_by_quintile_urban2)
+  
+  # Create the plot
+  MPCE_plot <- ggplot(Final_MPCE1, aes(x = quintile, y = avg_MPCE, fill = Sector)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    labs(title = "MPCE by Quintile for Rural and Urban Sectors",
+         x = "Quintile",
+         y = "MPCE (in Rs)") +
+    theme(
+      legend.title = element_blank(),
+      plot.title = element_text(size = 20),      # Increase title font size
+      axis.title.x = element_text(size = 16),    # Increase x-axis label font size
+      axis.title.y = element_text(size = 16),    # Increase y-axis label font size
+      axis.text.x = element_text(size = 14),     # Increase x-axis text size
+      axis.text.y = element_text(size = 14)      # Increase y-axis text size
+    ) +
+    scale_fill_manual(values = c("Rural" = "blue", "Urban" = "red")) +
+    theme(legend.title = element_blank()) +
+    geom_hline(yintercept = Rural_avg_MPCE, color = "blue", linetype = "dashed", size = 1) +
+    geom_hline(yintercept = Urban_avg_MPCE, color = "red", linetype = "dashed", size = 1)
+  
+  ## HOUSEHOLD   
+  
+  Household <- Household %>%
+    mutate(Sector = if_else(Sector == 2, "Urban", "Rural")) %>%
+    mutate(
+      Does.the.household.have.a.dwelling.unit.at.present.place.of.enumeration. = if_else(
+        Does.the.household.have.a.dwelling.unit.at.present.place.of.enumeration. == 1, "Yes", "No")) %>%
+    mutate(Type.of.Dwelling.Unit = if_else(Type.of.Dwelling.Unit == 1, "Owned",
+                                           if_else(Type.of.Dwelling.Unit == 2, "Rented", "Others"))) %>%
+    mutate(Basic.building.Material.used.for.major.portion.of.the.wall.of.the.dwelling.Unit = 
+             case_when(
+               Basic.building.Material.used.for.major.portion.of.the.wall.of.the.dwelling.Unit == 1 ~ "Grass/ Straw/ Leaves/ Reeds/ Bamboo, etc.",
+               Basic.building.Material.used.for.major.portion.of.the.wall.of.the.dwelling.Unit == 2 ~ "Mud (with/without bamboo)/ Unburnt brick",
+               Basic.building.Material.used.for.major.portion.of.the.wall.of.the.dwelling.Unit == 3 ~ "Canvas/ Cloth",
+               Basic.building.Material.used.for.major.portion.of.the.wall.of.the.dwelling.Unit == 4 ~ "Other Katcha",
+               Basic.building.Material.used.for.major.portion.of.the.wall.of.the.dwelling.Unit == 5 ~ "Timber",
+               Basic.building.Material.used.for.major.portion.of.the.wall.of.the.dwelling.Unit == 6 ~ "Burnt brick/ Stone/ Limestone",
+               Basic.building.Material.used.for.major.portion.of.the.wall.of.the.dwelling.Unit == 7 ~ "Iron or Other Metal Sheet",
+               Basic.building.Material.used.for.major.portion.of.the.wall.of.the.dwelling.Unit == 8 ~ "Cement/ RBC/ RCC",
+               Basic.building.Material.used.for.major.portion.of.the.wall.of.the.dwelling.Unit == 9 ~ "Other Pucca",
+               TRUE ~ "NA"  # In case of missing or unexpected values
+             ) 
+    ) %>%
+    mutate(Basic.building.Material.used.for.construction.of.the.major.portion.of.the.outer.exposed.part.of.the.roof.of.the.dwelling.unit = 
+             case_when(
+               Basic.building.Material.used.for.construction.of.the.major.portion.of.the.outer.exposed.part.of.the.roof.of.the.dwelling.unit == 1 ~ "Grass/ Straw/ Leaves/ Reeds/ Bamboo, etc.",
+               Basic.building.Material.used.for.construction.of.the.major.portion.of.the.outer.exposed.part.of.the.roof.of.the.dwelling.unit == 2 ~ "Mud/ Unburnt brick",
+               Basic.building.Material.used.for.construction.of.the.major.portion.of.the.outer.exposed.part.of.the.roof.of.the.dwelling.unit == 3 ~ "Canvas/ Cloth",
+               Basic.building.Material.used.for.construction.of.the.major.portion.of.the.outer.exposed.part.of.the.roof.of.the.dwelling.unit == 4 ~ "Other Katcha",
+               Basic.building.Material.used.for.construction.of.the.major.portion.of.the.outer.exposed.part.of.the.roof.of.the.dwelling.unit == 5 ~ "Tiles/ Slate",
+               Basic.building.Material.used.for.construction.of.the.major.portion.of.the.outer.exposed.part.of.the.roof.of.the.dwelling.unit == 6 ~ "Burnt Brick/ Stone/ Limestone",
+               Basic.building.Material.used.for.construction.of.the.major.portion.of.the.outer.exposed.part.of.the.roof.of.the.dwelling.unit == 7 ~ "Iron/ Zinc/ Other Metal Sheet/ Asbestos Sheet",
+               Basic.building.Material.used.for.construction.of.the.major.portion.of.the.outer.exposed.part.of.the.roof.of.the.dwelling.unit == 8 ~ "Cement/ RBC/ RCC",
+               Basic.building.Material.used.for.construction.of.the.major.portion.of.the.outer.exposed.part.of.the.roof.of.the.dwelling.unit == 9 ~ "Other Pucca",
+               TRUE ~ "NA"  # In case of missing or unexpected values
+             )
+    ) %>%
+    mutate(Basic.Building.Material.used.for.construction.of.the.major.portion.of.the.floor.of.the.dwelling.Unit. = 
+             case_when(
+               Basic.Building.Material.used.for.construction.of.the.major.portion.of.the.floor.of.the.dwelling.Unit. == 1 ~ "Grass/ Straw/ Leaves/ Reeds/ Bamboo, etc.",
+               Basic.Building.Material.used.for.construction.of.the.major.portion.of.the.floor.of.the.dwelling.Unit. == 2 ~ "Mud/ Unburnt Brick",
+               Basic.Building.Material.used.for.construction.of.the.major.portion.of.the.floor.of.the.dwelling.Unit. == 3 ~ "Canvas",
+               Basic.Building.Material.used.for.construction.of.the.major.portion.of.the.floor.of.the.dwelling.Unit. == 4 ~ "Other Katcha",
+               Basic.Building.Material.used.for.construction.of.the.major.portion.of.the.floor.of.the.dwelling.Unit. == 5 ~ "Tiles/ Slate",
+               Basic.Building.Material.used.for.construction.of.the.major.portion.of.the.floor.of.the.dwelling.Unit. == 6 ~ "Burnt Brick/ Stone/ Limestone",
+               Basic.Building.Material.used.for.construction.of.the.major.portion.of.the.floor.of.the.dwelling.Unit. == 7 ~ "Iron/ Zinc/ Other Metal Sheet/ Asbestos Sheet",
+               Basic.Building.Material.used.for.construction.of.the.major.portion.of.the.floor.of.the.dwelling.Unit. == 8 ~ "Cement/ RBC/ RCC",
+               Basic.Building.Material.used.for.construction.of.the.major.portion.of.the.floor.of.the.dwelling.Unit. == 9 ~ "Other Pucca",
+               TRUE ~ "NA"  # In case of missing or unexpected values
+             )
+    ) %>%
+    mutate(Primary.source.of.energy.of.the.household.for.cooking = 
+             case_when(
+               Primary.source.of.energy.of.the.household.for.cooking == 1 ~ "Firewood and Chips",
+               Primary.source.of.energy.of.the.household.for.cooking == 2 ~ "LPG",
+               Primary.source.of.energy.of.the.household.for.cooking == 3 ~ "Other Natural Gas",
+               Primary.source.of.energy.of.the.household.for.cooking == 4 ~ "Dung Cake",
+               Primary.source.of.energy.of.the.household.for.cooking == 5 ~ "Kerosene",
+               Primary.source.of.energy.of.the.household.for.cooking == 6 ~ "Coke, Coal",
+               Primary.source.of.energy.of.the.household.for.cooking == 7 ~ "Gobar Gas",
+               Primary.source.of.energy.of.the.household.for.cooking == 8 ~ "Other Biogas",
+               Primary.source.of.energy.of.the.household.for.cooking == 9 ~ "Others",
+               Primary.source.of.energy.of.the.household.for.cooking == 10 ~ "Charcoal",
+               Primary.source.of.energy.of.the.household.for.cooking == 11 ~ "Electricity (incl. generated by solar or wind power generators)",
+               Primary.source.of.energy.of.the.household.for.cooking == 12 ~ "No Cooking Arrangement",
+               TRUE ~ "NA"  # In case of missing or unexpected values
+             )
+    ) %>%
+    mutate(Primary.source.of.energy.of.the.household.for.Lighting = 
+             case_when(
+               Primary.source.of.energy.of.the.household.for.Lighting == 1 ~ "Electricity (incl. generated by solar or wind power generators)",
+               Primary.source.of.energy.of.the.household.for.Lighting == 2 ~ "Kerosene",
+               Primary.source.of.energy.of.the.household.for.Lighting == 3 ~ "Other Oil",
+               Primary.source.of.energy.of.the.household.for.Lighting == 4 ~ "Gas",
+               Primary.source.of.energy.of.the.household.for.Lighting == 5 ~ "Candle",
+               Primary.source.of.energy.of.the.household.for.Lighting == 6 ~ "No Lighting Arrangement",
+               Primary.source.of.energy.of.the.household.for.Lighting == 9 ~ "Others",
+               TRUE ~ "NA"  # In case of missing or unexpected values
+             )
+    ) %>%
+    mutate(Source.of.Drinking.Water..Last.365.days. = 
+             case_when(
+               Source.of.Drinking.Water..Last.365.days. == 1 ~ "Bottled Water",
+               Source.of.Drinking.Water..Last.365.days. %in% c(2, 3, 4) ~ "Piped Water",
+               Source.of.Drinking.Water..Last.365.days. %in% c(6, 7, 8, 9) ~ "Well/Tube Well/Hand Pump",
+               Source.of.Drinking.Water..Last.365.days. %in% c(5, 10) ~ "Public Tap/Tanker",
+               Source.of.Drinking.Water..Last.365.days. == 11 ~ "Private Tanker",
+               Source.of.Drinking.Water..Last.365.days. %in% c(12, 13) ~ "Spring",
+               Source.of.Drinking.Water..Last.365.days. == 14 ~ "Rainwater Storage",
+               TRUE ~ "NA"  # In case of missing or unexpected values
+             )
+    )
+  
+  # State - KARNATAKA Rural
+  # Filter the Household data for Rural and Urban sectors based on state_name
+  Household_Karnataka_Rural <- Household %>%
+    filter(if (!is.null(state_name)) StateName == state_name else TRUE) %>%
+    filter(Sector == "Rural")
+  
+  Household_Karnataka_Urban <- Household %>%
+    filter(if (!is.null(state_name)) StateName == state_name else TRUE) %>%
+    filter(Sector == "Urban")
+  
+  
+  MPCE_Karnataka_Rural2 <- MPCE_Karnataka_Rural1 %>%
+    select(HH_ID, quintile)
+  
+  Karnataka_rur_hh <- left_join(
+    MPCE_Karnataka_Rural2, Household_Karnataka_Rural, by = "HH_ID"
+  )
+  
+  # URBAN
+  
+  MPCE_Karnataka_Urban2 <- MPCE_Karnataka_Urban1 %>%
+    select(HH_ID, quintile)
+  
+  Karnataka_urban_hh <- left_join(
+    MPCE_Karnataka_Urban2, Household_Karnataka_Urban, by = "HH_ID"
+  )
+  
+  
+  
+  
+  library(cowplot)
+  ## COOKING 
+  Karnataka_rur_hh_cooking <- Karnataka_rur_hh %>%
+    select(quintile, Primary.source.of.energy.of.the.household.for.cooking) %>%
+    group_by(quintile, Primary.source.of.energy.of.the.household.for.cooking) %>%
+    summarise(
+      count = n(),
+      total = n_distinct(quintile)
+    ) %>%
+    mutate(proportion = count / sum(count)) %>%
+    ungroup()
+  
+  
+  Karnataka_urban_hh_cooking <- Karnataka_urban_hh %>%
+    select(quintile, Primary.source.of.energy.of.the.household.for.cooking) %>%
+    group_by(quintile, Primary.source.of.energy.of.the.household.for.cooking) %>%
+    summarise(
+      count = n(),
+      total = n_distinct(quintile)
+    ) %>%
+    mutate(proportion = count / sum(count)) %>%
+    ungroup()
+  
+  # Combine the urban and rural data for cooking energy sources
+  combined_data_cooking <- bind_rows(
+    Karnataka_urban_hh_cooking %>% mutate(type = "Urban"),
+    Karnataka_rur_hh_cooking %>% mutate(type = "Rural")
+  )
+  
+  # Ensure all combinations of quintile, energy source, and type are present
+  combined_data_complete_cooking <- combined_data_cooking %>%
+    complete(
+      quintile,
+      Primary.source.of.energy.of.the.household.for.cooking,
+      type = c("Rural", "Urban"),
+      fill = list(proportion = 0)
+    )
+  
+  # Create the stacked bar plot for cooking energy sources
+  # Define a fixed color palette for the 12 sources
+fixed_colors <- c(
+  "Firewood and Chips" = "#66c2a5",
+  "LPG" = "#fc8d62",
+  "Other Natural Gas" = "#8da0cb",
+  "Dung Cake" = "#e78ac3",
+  "Kerosene" = "#a6d854",
+  "Coke, Coal" = "#ffd92f",
+  "Gobar Gas" = "#e5c494",
+  "Other Biogas" = "#b3b3b3",
+  "Others" = "#a6cee3",
+  "Charcoal" = "#1f78b4",
+  "Electricity" = "#b2df8a",
+  "No Cooking Arrangement" = "#33a02c"
+)
+
+# Now use this color palette in your ggplot code
+dummy_data <- data.frame(
+  Primary.source.of.energy.of.the.household.for.cooking = names(fixed_colors),
+  proportion = 1,  # Dummy value
+  quintile = "All",  # Dummy value
+  type = "All"  # Dummy value
+)
+
+# Create the plot
+cooking_plot <- ggplot(combined_data_complete_cooking, aes(x = quintile, y = proportion, fill = Primary.source.of.energy.of.the.household.for.cooking)) +
+  geom_bar(stat = "identity", position = "stack") +
+  facet_wrap(~ type, scales = "free") +
+  scale_fill_manual(values = fixed_colors) +  # Use the fixed color palette
+  labs(title = paste(state_name),
+       x = "Quintile",
+       y = "Proportion of Households",
+       fill = "Cooking Energy Source") +
+  theme_minimal()
+
+# Create a legend plot from the dummy data
+legend_plot <- ggplot(dummy_data, aes(x = "", y = proportion, fill = Primary.source.of.energy.of.the.household.for.cooking)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = fixed_colors) +
+  theme_void() +
+  theme(legend.position = "bottom",
+        legend.box.margin = margin(0, 0, 0, 0),
+        legend.text = element_text(size = 8),
+        legend.title = element_blank(),
+        legend.key.size = unit(0.5, "cm")) +  # Adjust legend key size
+  guides(fill = guide_legend(ncol = 2))  # Arrange legend in 2 columns
+
+# Remove legend from the original plot
+cooking_plot <- cooking_plot + theme(legend.position = "none")
+legend_plot <- legend_plot + theme(legend.margin = margin(t = 10))
+
+# Combine the original plot with the custom legend
+final_plot <- plot_grid(
+  cooking_plot,
+  legend_plot,
+  ncol = 1,
+  rel_heights = c(1, 0.2)  # Adjust height ratios as needed
+)
+
+  #### SOURCE OF DRINKING WATER 
+  
+  Karnataka_rur_hh_water <- Karnataka_rur_hh %>%
+    select(quintile, Source.of.Drinking.Water..Last.365.days.) %>%
+    group_by(quintile, Source.of.Drinking.Water..Last.365.days.) %>%
+    summarise(
+      count = n(),
+      total = n_distinct(quintile)
+    ) %>%
+    mutate(proportion = count / sum(count)) %>%
+    ungroup()
+  
+  
+  Karnataka_urban_hh_water <- Karnataka_urban_hh %>%
+    select(quintile, Source.of.Drinking.Water..Last.365.days.) %>%
+    group_by(quintile, Source.of.Drinking.Water..Last.365.days.) %>%
+    summarise(
+      count = n(),
+      total = n_distinct(quintile)
+    ) %>%
+    mutate(proportion = count / sum(count)) %>%
+    ungroup()
+  # Combine the urban and rural data for sources of drinking water without filtering for top 4
+  combined_data_water <- bind_rows(
+    Karnataka_urban_hh_water %>% mutate(type = "Urban"),
+    Karnataka_rur_hh_water %>% mutate(type = "Rural")
+  )
+  
+  # Ensure all combinations of quintile, source of drinking water, and type are present
+  combined_data_complete_water <- combined_data_water %>%
+    complete(
+      quintile,
+      Source.of.Drinking.Water..Last.365.days.,
+      type = c("Rural", "Urban"),
+      fill = list(proportion = 0)
+    )
+  
+  # Create the stacked bar plot for sources of drinking water
+  water_plot <- ggplot(combined_data_complete_water, aes(x = quintile, y = proportion, fill = Source.of.Drinking.Water..Last.365.days.)) +
+    geom_bar(stat = "identity", position = "stack") +
+    facet_wrap(~ type, scales = "free") +
+    scale_fill_brewer(palette = "Set3") +
+    labs(title = "Sources of Drinking Water by Quintile",
+         x = "Quintile",
+         y = "Proportion of Households",
+         fill = "Drinking Water Source") +
+    theme_minimal()
+  
+  
+  
+  # WALLS
+  
+  Karnataka_rur_hh_material_wall <- Karnataka_rur_hh %>%
+    select(quintile, Basic.building.Material.used.for.major.portion.of.the.wall.of.the.dwelling.Unit) %>%
+    group_by(quintile, Basic.building.Material.used.for.major.portion.of.the.wall.of.the.dwelling.Unit) %>%
+    summarise(
+      count = n(),
+      total = n_distinct(quintile)
+    ) %>%
+    mutate(proportion = count / sum(count)) %>%
+    ungroup()
+  
+  
+  Karnataka_urban_hh_material_wall <- Karnataka_urban_hh %>%
+    select(quintile, Basic.building.Material.used.for.major.portion.of.the.wall.of.the.dwelling.Unit) %>%
+    group_by(quintile, Basic.building.Material.used.for.major.portion.of.the.wall.of.the.dwelling.Unit) %>%
+    summarise(
+      count = n(),
+      total = n_distinct(quintile)
+    ) %>%
+    mutate(proportion = count / sum(count)) %>%
+    ungroup()
+  
+  # Combine the urban and rural data without filtering for top 2
+  combined_data_wall <- bind_rows(Karnataka_urban_hh_material_wall %>% mutate(type = "Urban"),
+                                  Karnataka_rur_hh_material_wall %>% mutate(type = "Rural"))
+  
+  # Ensure all combinations of quintile, building material, and type are present
+  combined_data_complete_wall <- combined_data_wall %>%
+    complete(quintile, Basic.building.Material.used.for.major.portion.of.the.wall.of.the.dwelling.Unit, type = c("Rural", "Urban"), fill = list(proportion = 0))
+  
+  # Create the stacked bar plot
+  wall_plot <- ggplot(combined_data_complete_wall, aes(x = quintile, y = proportion, fill = Basic.building.Material.used.for.major.portion.of.the.wall.of.the.dwelling.Unit)) +
+    geom_bar(stat = "identity", position = "stack") +
+    facet_wrap(~ type, scales = "free") +
+    scale_fill_brewer(palette = "Set3") +
+    labs(title = "Distribution of Building Materials for Walls by Quintile",
+         x = "Quintile",
+         y = "Proportion of Households",
+         fill = "Building Material") +
+    theme_minimal()
+  
+  
+  # FLOORING 
+  Karnataka_rur_hh_material_floor <- Karnataka_rur_hh %>%
+    select(quintile, Basic.Building.Material.used.for.construction.of.the.major.portion.of.the.floor.of.the.dwelling.Unit.) %>%
+    group_by(quintile, Basic.Building.Material.used.for.construction.of.the.major.portion.of.the.floor.of.the.dwelling.Unit.) %>%
+    summarise(
+      count = n(),
+      total = n_distinct(quintile)
+    ) %>%
+    mutate(proportion = count / sum(count)) %>%
+    ungroup()
+  
+  
+  Karnataka_urban_hh_material_floor <- Karnataka_urban_hh %>%
+    select(quintile, Basic.Building.Material.used.for.construction.of.the.major.portion.of.the.floor.of.the.dwelling.Unit.) %>%
+    group_by(quintile, Basic.Building.Material.used.for.construction.of.the.major.portion.of.the.floor.of.the.dwelling.Unit.) %>%
+    summarise(
+      count = n(),
+      total = n_distinct(quintile)
+    ) %>%
+    mutate(proportion = count / sum(count)) %>%
+    ungroup()
+  
+  
+  # Combine the urban and rural data for floor materials
+  combined_data_floor <- bind_rows(
+    Karnataka_urban_hh_material_floor %>% mutate(type = "Urban"),
+    Karnataka_rur_hh_material_floor %>% mutate(type = "Rural")
+  )
+  
+  # Ensure all combinations of quintile, building material, and type are present
+  combined_data_complete_floor <- combined_data_floor %>%
+    complete(
+      quintile,
+      Basic.Building.Material.used.for.construction.of.the.major.portion.of.the.floor.of.the.dwelling.Unit.,
+      type = c("Rural", "Urban"),
+      fill = list(proportion = 0)
+    )
+  
+  # Define a consistent color palette for the building materials
+fixed_colors_floor <- c(
+  "Grass/ Straw/ Bamboo" = "#8dd3c7",
+  "Mud/ Unburnt Brick" = "#ffffb3",
+  "Canvas" = "#bebada",
+  "Other Katcha" = "#fb8072",
+  "Tiles/ Slate" = "#80b1d3",
+  "Burnt Brick/ Stone/ Limestone" = "#fdb462",
+  "Iron/ Other metal Sheet" = "#b3de69",
+  "Cement/ RBC/ RCC" = "#fccde5",
+  "Other Pucca" = "#d9d9d9"
+)
+
+# Create a dummy dataset for the legend
+dummy_data_floor <- data.frame(
+  Basic.Building.Material.used.for.construction.of.the.major.portion.of.the.floor.of.the.dwelling.Unit. = names(fixed_colors_floor),
+  proportion = 1,  # Dummy value
+  quintile = "All",  # Dummy value
+  type = "All"  # Dummy value
+)
+
+
+# Create the stacked bar plot for floor materials without legend
+floor_plot <- ggplot(combined_data_complete_floor, aes(x = quintile, y = proportion, fill = Basic.Building.Material.used.for.construction.of.the.major.portion.of.the.floor.of.the.dwelling.Unit.)) +
+    geom_bar(stat = "identity", position = "stack") +
+    facet_wrap(~ type, scales = "free") +
+    scale_fill_manual(values = fixed_colors_floor) +
+    labs(title = paste(state_name),
+         x = "Quintile",
+         y = "Proportion of Households",
+         fill = "Floor Material") +
+    theme_minimal() +
+    theme(legend.position = "none")  # Remove legend from the main plot
+
+
+# Create a legend plot from the dummy data
+legend_plot_floor <- ggplot(dummy_data_floor, aes(x = "", y = proportion, fill = Basic.Building.Material.used.for.construction.of.the.major.portion.of.the.floor.of.the.dwelling.Unit.)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = fixed_colors_floor) +
+  theme_void() +
+  theme(legend.position = "bottom",
+        legend.box.margin = margin(0, 0, 0, 0),
+        legend.text = element_text(size = 8),
+        legend.title = element_blank(),
+        legend.key.size = unit(0.5, "cm")) +  # Adjust legend key size
+  guides(fill = guide_legend(ncol = 2))  # Arrange legend in 2 columns
+
+# Combine the main plot with the custom legend
+final_floor_plot <- plot_grid(
+  floor_plot,
+  legend_plot_floor,
+  ncol = 1,
+  rel_heights = c(1, 0.2)  # Adjust height ratios as needed
+)
+
+
+  
+  
+  ## ROOFING
+  
+  Karnataka_rur_hh_material_roof <- Karnataka_rur_hh %>%
+    select(quintile, Basic.building.Material.used.for.construction.of.the.major.portion.of.the.outer.exposed.part.of.the.roof.of.the.dwelling.unit) %>%
+    group_by(quintile, Basic.building.Material.used.for.construction.of.the.major.portion.of.the.outer.exposed.part.of.the.roof.of.the.dwelling.unit) %>%
+    summarise(
+      count = n(),
+      total = n_distinct(quintile)
+    ) %>%
+    mutate(proportion = count / sum(count)) %>%
+    ungroup()
+  
+  
+  Karnataka_urban_hh_material_roof <- Karnataka_urban_hh %>%
+    select(quintile, Basic.building.Material.used.for.construction.of.the.major.portion.of.the.outer.exposed.part.of.the.roof.of.the.dwelling.unit) %>%
+    group_by(quintile, Basic.building.Material.used.for.construction.of.the.major.portion.of.the.outer.exposed.part.of.the.roof.of.the.dwelling.unit) %>%
+    summarise(
+      count = n(),
+      total = n_distinct(quintile)
+    ) %>%
+    mutate(proportion = count / sum(count)) %>%
+    ungroup()
+  
+  
+  # Combine the urban and rural data for roofing materials without filtering for top 3
+  combined_data_roof <- bind_rows(
+    Karnataka_urban_hh_material_roof %>% mutate(type = "Urban"),
+    Karnataka_rur_hh_material_roof %>% mutate(type = "Rural")
+  )
+  
+  # Ensure all combinations of quintile, roofing material, and type are present
+  combined_data_complete_roof <- combined_data_roof %>%
+    complete(
+      quintile,
+      Basic.building.Material.used.for.construction.of.the.major.portion.of.the.outer.exposed.part.of.the.roof.of.the.dwelling.unit,
+      type = c("Rural", "Urban"),
+      fill = list(proportion = 0)
+    )
+  
+  # Create the stacked bar plot for roofing materials
+  roof_plot <- ggplot(combined_data_complete_roof, aes(x = quintile, y = proportion, fill = Basic.building.Material.used.for.construction.of.the.major.portion.of.the.outer.exposed.part.of.the.roof.of.the.dwelling.unit)) +
+    geom_bar(stat = "identity", position = "stack") +
+    facet_wrap(~ type, scales = "free") +
+    scale_fill_brewer(palette = "Set3") +
+    labs(title = "Distribution of Roofing Materials by Quintile",
+         x = "Quintile",
+         y = "Proportion of Households",
+         fill = "Roofing Material") +
+    theme_minimal()
+  
+    
+  ## CONSUMABLE OWNERSHIP
+  
+  
+  
+  Consumable_ownership <- Consumable_ownership %>%
+    mutate(Sector = if_else(Sector == 2, "Urban", "Rural"))
+  
+  owner_Karnataka <- Consumable_ownership %>%
+    filter(if (!is.null(state_name)) StateName == state_name else TRUE)
+  
+  MPCE_Karnataka2 <- rbind(MPCE_Karnataka_Urban2, MPCE_Karnataka_Rural2)
+  
+  Karnataka_own <- left_join(
+    MPCE_Karnataka2, owner_Karnataka, by = "HH_ID"
+  )
+  
+  # Rename columns from 7th onwards in the Karnataka_rur_own dataframe
+  colnames(Karnataka_own)[7:18] <- c(
+    "TV", 
+    "Radio", 
+    "Laptop/PC", 
+    "Mobile", 
+    "Bicycle", 
+    "Motorcycle/Scooter", 
+    "Car", 
+    "Trucks", 
+    "AnimalCart", 
+    "Refrigerator", 
+    "Washing machine", 
+    "AC/Cooler"
+  )
+  
+  
+  ## ELECTRONIC
+  
+  rural_urban_data <- Karnataka_own %>%
+    select(quintile, Sector, TV, `Laptop/PC`, Mobile, Radio) %>%
+    pivot_longer(cols = TV:Radio, names_to = "Item", values_to = "Ownership") %>%
+    mutate(Ownership = ifelse(is.na(Ownership), 0, 1)) %>%  # Convert NA to 0, 1 remains as 1
+    group_by(Sector, quintile, Item) %>%
+    summarise(Proportion = mean(Ownership)) %>%
+    ungroup()
+  
+  # Plot the data
+  electronic_plot <- ggplot(rural_urban_data, aes(x = quintile, y = Proportion, fill = Sector)) +
+    geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7) +
+    facet_wrap(~ Item, scales = "free_y") +  # Use 'free_y' to adjust y-axis per facet
+    scale_fill_manual(values = c("Rural" = "blue", "Urban" = "red")) +
+    scale_y_continuous(limits = c(0, 1), expand = c(0, 0)) +  # Set y-axis range from 0 to 1
+    labs(title = "Proportion of Households Owning Electronic devices by Quintile",
+         x = "Quintile",
+         y = "Proportion of Households",
+         fill = "Sector") +
+    theme_minimal()
+  
+  
+  ## TRANSPORT
+  
+  rural_urban_data_transport <- Karnataka_own %>%
+    select(quintile, Sector, Bicycle, `Motorcycle/Scooter`, Car, Trucks) %>%
+    pivot_longer(cols = Bicycle:Trucks, names_to = "Item", values_to = "Ownership") %>%
+    mutate(Ownership = ifelse(is.na(Ownership), 0, 1)) %>%  # Convert NA to 0, 1 remains as 1
+    group_by(Sector, quintile, Item) %>%
+    summarise(Proportion = mean(Ownership)) %>%
+    ungroup()
+  
+  vehicles_plot <- ggplot(rural_urban_data_transport, aes(x = quintile, y = Proportion, fill = Sector)) +
+    geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7) +
+    facet_wrap(~ Item, scales = "free_y") +  # Use 'free_y' to adjust y-axis per facet
+    scale_fill_manual(values = c("Rural" = "blue", "Urban" = "red")) +
+    scale_y_continuous(limits = c(0, 1), expand = c(0, 0)) +  # Set y-axis range from 0 to 1
+    labs(title = "Proportion of Households Owning Vehicles by Quintile",
+         x = "Quintile",
+         y = "Proportion of Households",
+         fill = "Sector") +
+    theme_minimal()
+  
+  
+  
+  ## APPLIANCES
+  
+  
+  rural_urban_data_electric <- Karnataka_own %>%
+    select(quintile, Sector, Refrigerator, `Washing machine`, `AC/Cooler`) %>%
+    pivot_longer(cols = Refrigerator:`AC/Cooler`, names_to = "Item", values_to = "Ownership") %>%
+    mutate(Ownership = ifelse(is.na(Ownership), 0, 1)) %>%  # Convert NA to 0, 1 remains as 1
+    group_by(Sector, quintile, Item) %>%
+    summarise(Proportion = mean(Ownership)) %>%
+    ungroup()
+  
+  ac_cooler_data <- rural_urban_data_electric %>%
+  filter(Item == "AC/Cooler")
+
+# Plot the data
+ac_cooler_plot <- ggplot(ac_cooler_data, aes(x = quintile, y = Proportion, fill = Sector)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7) +
+  scale_fill_manual(values = c("Rural" = "blue", "Urban" = "red")) +
+  scale_y_continuous(limits = c(0, 1), expand = c(0, 0)) +  # Set y-axis range from 0 to 1
+  labs(title = paste(state_name),
+       x = "Quintile",
+       y = "Proportion of Households",
+       fill = "Sector") +
+  theme_minimal() +
+  theme(
+    legend.position = c(0.05, 0.95),  # Position legend inside plot (top left)
+    legend.justification = c(0, 1),   # Adjust justification to top-left
+    legend.background = element_rect(fill = alpha('white', 0.7)), # Semi-transparent background for legend
+    axis.title = element_text(size = 14),  # Increase axis title font size
+    axis.text = element_text(size = 12)    # Increase axis text font size
+  )
+  # Plot the data
+  appliances_plot <- ggplot(rural_urban_data_electric, aes(x = quintile, y = Proportion, fill = Sector)) +
+    geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7) +
+    facet_wrap(~ Item, scales = "free_y") +  # Use 'free_y' to adjust y-axis per facet
+    scale_fill_manual(values = c("Rural" = "blue", "Urban" = "red")) +
+    scale_y_continuous(limits = c(0, 1), expand = c(0, 0)) +  # Set y-axis range from 0 to 1
+    labs(title = "Proportion of Households Owning Appliances by Quintile",
+         x = "Quintile",
+         y = "Proportion of Households",
+         fill = "Sector") +
+    theme_minimal()
+  
+  
+  
+  
+  return(list(
+    MPCE_plot, final_plot, water_plot, wall_plot, final_floor_plot, roof_plot,
+    electronic_plot, vehicles_plot, ac_cooler_plot,
+    mpce_by_quintile_rural1, mpce_by_quintile_rural_pop, mpce_by_quintile_urban1, mpce_by_quintile_urban_pop))
+}
+
+
+
+```
+
+
+<!-- Energy sources for cooking shows higher degree of regional variation (dependent on various socio-economic indicators perhaps)
+
+- In Karnataka, LPG dominates as primary source of energy for cooking for majority proportion of households across urban (80-100%) and rural quintiles.
+
+- Firewood still features as source of energy for cooking in 25-35% of households in the lower quintiles of rural Karnataka.
+
+- Peculiar phenomenon is observed among 5-15% of households in higher urban quintiles who report no cooking arrangement in households (need deeper introspection - perhaps dependent on food delivery)
+
+##
+
+Surprisingly around 30-75% (higher to lower quintile) of households in rural Kerala report firewood as their source of energy for cooking purposes, followed by LPG. Also higher quintile urban HHs show no cooking arrangement. Surprisingly Bihar is leading in LPG compared to Kerala. 
+-->
+
+# Sources of energy for cooking purposes
+
+## 
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Example usage
+plots_karnataka <- generate_plots("Karnataka")  # Replace "Karnataka" with other state names or NULL
+plots_kerala <- generate_plots("Kerala")
+plots_bihar <- generate_plots("Bihar")
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+karnataka_plot <- plots_karnataka[[2]] # Adjust according to the output of generate_plots
+kerala_plot <- plots_kerala[[2]]
+bihar_plot <- plots_bihar[[2]]
+
+
+# Combine the three plots into a single row
+plot_grid(
+  karnataka_plot,
+  kerala_plot,
+  bihar_plot,
+  nrow = 1,
+  rel_widths = c(1, 1, 1)  # Adjust widths if needed
+)
+
+```
+
+
+# Building material for floor
+
+##
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+karnataka_plot1 <- plots_karnataka[[5]] # Adjust according to the output of generate_plots
+kerala_plot1 <- plots_kerala[[5]]
+bihar_plot1 <- plots_bihar[[5]]
+
+
+# Combine the three plots into a single row
+plot_grid(
+  karnataka_plot1,
+  kerala_plot1,
+  bihar_plot1,
+  nrow = 1,
+  rel_widths = c(1, 1, 1)  # Adjust widths if needed
+)
+
+
+```
+
+## AC / Cooler ownership
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(gridExtra)
+# Assuming the plots are already created and stored in variables
+grid.arrange(plots_karnataka[[9]], plots_kerala[[9]], plots_bihar[[9]], ncol=3)
+
+```
+
+## Urban / Rural Population distribution
+
+```{=latex}
+    \centering
+    \includegraphics[width=\textwidth]{Urban_Rural_pop_regions.pdf}
+    % \caption{Urban-Rural population region-wise} % Commented out because \caption is not supported in beamer frames
+
+```
+
+## Final note
+
+- As living standards and socio-economic conditions improve, consumption patterns will also evolve.
+
+- This could potentially lead to huge jump in our energy demand projections. 
+- Further, extremely low level of ownership of electric appliances and transport vehicles and growth in urbanisation is a source of uncertainity regarding the nature of change in consumption of material goods. 
+
+- Finally, the nature of technologies can see dramatic changes, leading to higher uncertainities regarding emission projections till 2070.
